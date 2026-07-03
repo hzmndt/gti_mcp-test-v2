@@ -3,12 +3,8 @@ set -e
 
 # Configuration - Edit these values before running
 # Enter your Google Cloud project ID (find it at: https://console.cloud.google.com)
-PROJECT_ID="your-project-id-here"
-
-# Enter a name for your Cloud Run service
-SERVICE_NAME="gti-remotemcp-server"
-
-# Enter your preferred Google Cloud region (e.g., us-central1, us-east1, europe-west1)
+PROJECT_ID="apj-tsc-lab1"
+SERVICE_NAME="gti-mcp-service"
 REGION="us-central1"
 
 # NOTE: Replace these with your actual secrets or set them in your environment before running
@@ -31,13 +27,14 @@ gcloud config set project "$PROJECT_ID"
 # and handles the Artifact Registry creation/management.
 echo "Deploying service to Cloud Run (source deploy)..."
 gcloud run deploy "$SERVICE_NAME" \
+  --quiet \
   --source . \
   --platform managed \
   --region "$REGION" \
   --project "$PROJECT_ID" \
-  --allow-unauthenticated \
-  --set-env-vars MCP_AUTH_TOKEN="$AUTH_TOKEN" \
-  --set-env-vars STATELESS="1"
+  --no-allow-unauthenticated \
+  --set-env-vars STATELESS="1" \
+  --set-env-vars VT_APIKEY="703a065ccd19914b0599b9c35d03046362ea9ed800483372b133f62b51c93d54"
 
 echo "=================================================="
 echo "Deployment Complete!"

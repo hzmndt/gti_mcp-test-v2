@@ -22,6 +22,7 @@ import vt
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route, Mount
 from starlette.requests import Request
@@ -74,38 +75,9 @@ from gti_mcp.tools import *
 
 # --- SSE and Auth Implementation ---
 
-class BearerTokenAuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        # Allow OPTIONS for CORS (if needed) or health checks
-        if request.method == "OPTIONS":
-            return await call_next(request)
-            
-        auth_token = os.getenv("MCP_AUTH_TOKEN")
-        if not auth_token:
-            # If no token configured, fail safe or allow? 
-            # User requirement: "use a bearer token... hardcoded to this MCP server"
-            # Assuming if env var is missing, we block everything to be safe.
-            return JSONResponse({"error": "Server misconfigured: MCP_AUTH_TOKEN missing"}, status_code=500)
 
-        # Support X-Mcp-Authorization to allow standard Authorization header to be used for Cloud Run IAM
-        # or other upstream proxies.
-        auth_header = request.headers.get("X-Mcp-Authorization")
-        if not auth_header:
-            auth_header = request.headers.get("Authorization")
-        
-        if not auth_header:
-             return JSONResponse({"error": "Missing Authorization or X-Mcp-Authorization header"}, status_code=401)
 
-        token = auth_header
-        if auth_header.startswith("Bearer "):
-             token = auth_header.split(" ")[1]
-             
-        if token != auth_token:
-            return JSONResponse({"error": "Invalid token"}, status_code=403)
-
-        return await call_next(request)
-
-sse = SseServerTransport("/messages")
+sse = SseServerTransport("/mcp")
 
 class ASGIResponse(Response):
     def __init__(self, app, **kwargs):
@@ -126,23 +98,23 @@ async def handle_sse(request: Request):
             await mcp_server.run(
                 streams[0], streams[1], mcp_server.create_initialization_options()
             )
-    
     return ASGIResponse(asgi_handler)
-
-async def handle_messages(request: Request):
-    return ASGIResponse(sse.handle_post_message)
+    
+async def handle_mcp(request: Request):
+    if request.method == "POST":
+        return ASGIResponse(sse.handle_post_message)
+    else:
+        return await handle_sse(request)
 
 # Create Starlette App
-middleware = [
-    Middleware(BearerTokenAuthMiddleware)
-]
+
 
 routes = [
-    Route("/sse", handle_sse),
-    Route("/messages", handle_messages, methods=["POST"])
+    Route("/mcp", handle_mcp, methods=["GET", "POST"])
 ]
 
-app = Starlette(debug=True, routes=routes, middleware=middleware)
+app = Starlette(debug=True, routes=routes)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 # Run the server (Local stdio support kept for back-compat/debugging)
 def main():

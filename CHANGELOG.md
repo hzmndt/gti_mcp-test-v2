@@ -5,7 +5,7 @@ All notable changes to the Google Threat Intelligence (GTI) MCP Server repositor
 ## [1.0.0-run] - 2026-07-03
 
 ### Changed
-- **Target Project & Service**: Configured `gti-remotemcp-deploy.sh` to target GCP Project `apj-tsc-lab1` with Service Name `gti-mcp-service` in region `us-central1`.
+- **Target Project & Service**: Configured `gti-remotemcp-deploy.sh` to target GCP Project `YOUR_PROJECT_ID` with Service Name `gti-mcp-service` in region `us-central1`.
 - **Authentication**:
   - Removed standard token authentication middleware (`BearerTokenAuthMiddleware`) from the FastAPI server (`gti_mcp/server.py`).
   - Switched Cloud Run deployment configuration (`gti-remotemcp-deploy.sh`) to `--no-allow-unauthenticated`, delegating authentication to native Google Cloud IAM.

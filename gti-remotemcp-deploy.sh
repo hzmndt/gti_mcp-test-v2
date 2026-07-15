@@ -3,7 +3,7 @@ set -e
 
 # Configuration - Edit these values before running
 # Enter your Google Cloud project ID (find it at: https://console.cloud.google.com)
-PROJECT_ID="apj-tsc-lab1"
+PROJECT_ID="YOUR_PROJECT_ID"
 SERVICE_NAME="gti-mcp-service"
 REGION="us-central1"
 

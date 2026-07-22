@@ -34,7 +34,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --project "$PROJECT_ID" \
   --no-allow-unauthenticated \
   --set-env-vars STATELESS="1" \
-  --set-env-vars VT_APIKEY="703a065ccd19914b0599b9c35d03046362ea9ed800483372b133f62b51c93d54"
+  --set-env-vars VT_APIKEY="YOUR_VT_API_KEY"
 
 echo "=================================================="
 echo "Deployment Complete!"

@@ -31,6 +31,7 @@ from starlette.routing import Route, Mount
 from starlette.requests import Request
 from mcp.server.sse import SseServerTransport
 from mcp.server.fastmcp import FastMCP, Context
+from mcp.server.transport_security import TransportSecuritySettings
 
 logging.basicConfig(level=logging.ERROR)
 
@@ -71,7 +72,9 @@ async def vt_client(ctx: Context, api_key: str = None) -> AsyncIterator[vt.Clien
 server = FastMCP(
     "Google Threat Intelligence MCP server",
     dependencies=["vt-py"],
-    stateless_http=stateless)
+    stateless_http=stateless,
+    host="0.0.0.0",
+    transport_security=TransportSecuritySettings(enable_dns_rebinding_protection=False))
 
 # Load tools.
 from gti_mcp.tools import *
@@ -127,43 +130,8 @@ class IPWhitelistMiddleware(BaseHTTPMiddleware):
 
         return JSONResponse({"error": f"Forbidden - Client IP {client_ip_str} not authorized"}, status_code=403)
 
-sse = SseServerTransport("/mcp")
-
-class ASGIResponse(Response):
-    def __init__(self, app, **kwargs):
-        super().__init__(**kwargs)
-        self.app = app
-
-    async def __call__(self, scope, receive, send):
-        await self.app(scope, receive, send)
-
-async def handle_sse(request: Request):
-    # Access the underlying Server object from FastMCP
-    mcp_server = getattr(server, "_mcp_server", None)
-    if not mcp_server:
-         raise RuntimeError("Could not find underlying MCP Server in FastMCP instance")
-
-    async def asgi_handler(scope, receive, send):
-        async with sse.connect_sse(scope, receive, send) as streams:
-            await mcp_server.run(
-                streams[0], streams[1], mcp_server.create_initialization_options()
-            )
-    return ASGIResponse(asgi_handler)
-    
-async def handle_mcp(request: Request):
-    if request.method == "POST":
-        return ASGIResponse(sse.handle_post_message)
-    else:
-        return await handle_sse(request)
-
-# Create Starlette App
-
-
-routes = [
-    Route("/mcp", handle_mcp, methods=["GET", "POST"])
-]
-
-app = Starlette(debug=True, routes=routes)
+# Create Starlette App using FastMCP streamable http app
+app = server.streamable_http_app()
 
 # Configure allowed IPs
 allowed_ips_env = os.getenv("ALLOWED_IPS", "")

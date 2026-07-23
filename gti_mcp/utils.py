@@ -16,6 +16,46 @@ import logging
 import vt
 import typing
 
+PRUNED_ATTRIBUTES = {
+    "url": ["url", "reputation", "tags", "categories", "last_analysis_stats", "total_votes", "threat_severity", "last_analysis_date", "last_modification_date"],
+    "domain": ["reputation", "tags", "categories", "last_analysis_stats", "total_votes", "threat_severity", "last_analysis_date", "last_modification_date", "creation_date", "whois"],
+    "ip_address": ["reputation", "tags", "categories", "last_analysis_stats", "total_votes", "threat_severity", "last_analysis_date", "last_modification_date", "asn", "as_owner", "country"],
+    "file": ["names", "type_description", "type_extension", "size", "magic", "reputation", "tags", "last_analysis_stats", "total_votes", "threat_severity", "last_analysis_date", "last_modification_date", "meaningful_name", "md5", "sha1", "sha256"]
+}
+
+def prune_object(obj: dict) -> dict:
+    if not isinstance(obj, dict):
+        return obj
+    
+    pruned = {}
+    for k in ["id", "type"]:
+        if k in obj:
+            pruned[k] = obj[k]
+            
+    if "attributes" in obj and isinstance(obj["attributes"], dict):
+        obj_type = obj.get("type")
+        allowed_attrs = PRUNED_ATTRIBUTES.get(obj_type)
+        if allowed_attrs:
+            pruned["attributes"] = {k: v for k, v in obj["attributes"].items() if k in allowed_attrs}
+        else:
+            pruned["attributes"] = obj["attributes"]
+            
+    if "relationships" in obj and isinstance(obj["relationships"], dict):
+        pruned["relationships"] = {}
+        for rel_name, rel_data in obj["relationships"].items():
+            if isinstance(rel_data, dict) and "data" in rel_data:
+                items = rel_data["data"]
+                if isinstance(items, list):
+                    pruned["relationships"][rel_name] = {
+                        "data": [{"id": item.get("id"), "type": item.get("type")} for item in items if isinstance(item, dict)]
+                    }
+                elif isinstance(items, dict):
+                    pruned["relationships"][rel_name] = {
+                        "data": {"id": items.get("id"), "type": items.get("type")}
+                    }
+                    
+    return pruned
+
 
 async def consume_vt_iterator(
     vt_client: vt.Client, endpoint: str, params: dict | None = None, limit: int = 10):
@@ -57,7 +97,6 @@ async def fetch_object(
       )
       return {
           "error": f"Failed to get main {resource_type} report: {obj.error}",
-          # "details": report.get("details"),
       }
   except vt.error.APIError as e:
     logging.warning(
@@ -81,7 +120,7 @@ async def fetch_object(
 
   logging.info(
       f"Successfully generated concise threat summary for id: {resource_id}")
-  return obj_dict
+  return prune_object(obj_dict)
 
 
 async def fetch_object_relationships(
@@ -111,7 +150,7 @@ async def fetch_object_relationships(
       obj_dict = obj.to_dict()
       if 'aggregations' in obj_dict['attributes']:
         del obj_dict['attributes']['aggregations']
-      data[name].append(obj_dict)
+      data[name].append(prune_object(obj_dict))
 
   return data
 
@@ -172,4 +211,3 @@ def parse_collection_commonalities(data: dict) -> str:
                 markdown_string += "\n"
 
     return markdown_string
-

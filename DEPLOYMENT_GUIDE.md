@@ -6,11 +6,17 @@ This guide outlines how to deploy the modified Google Threat Intelligence (GTI) 
 
 ## 1. Architecture & Security Model
 
-The deployment configuration replaces custom bearer-token middleware with native Google Cloud IAM authentication.
+The deployment supports two configuration modes to secure access:
 
-- **Egress**: The service runs on Cloud Run and makes outbound HTTPS requests to the VirusTotal/GTI API.
-- **Ingress**: Only authorized Google Cloud IAM identities (users or service accounts) with the **Cloud Run Invoker** (`roles/run.invoker`) role can access the service.
+### Option A: Native Google Cloud IAM Authentication (Default)
+- **Ingress**: Restricted to authorized Google Cloud IAM identities (users or service accounts) holding the **Cloud Run Invoker** (`roles/run.invoker`) role.
 - **Authentication**: Clients must pass a Google Cloud IAM Identity Token in the `Authorization: Bearer <ID_TOKEN>` header.
+
+### Option B: Unauthenticated Endpoint with IP Whitelisting
+- **Ingress**: Exposed to allow unauthenticated public calls (`--allow-unauthenticated`).
+- **Security Filter**: Traffic is filtered programmatically inside the Python application. The server checks the client IP address (`X-Forwarded-For`) against:
+  - Explicitly whitelisted IP addresses (e.g. workstation IPs).
+  - Google Cloud's public IP ranges (ensuring seamless connection from Gemini Enterprise or Vertex AI Search).
 
 ---
 
@@ -29,17 +35,29 @@ The deployment configuration replaces custom bearer-token middleware with native
    - `cloudbuild.googleapis.com` (Cloud Build API)
 
 ### Execute Deployment
+
+#### Standard Deployment (IAM Auth Required)
 1. Run the deployment script:
    ```bash
    chmod +x gti-remotemcp-deploy.sh
    ./gti-remotemcp-deploy.sh
    ```
+
+#### IP Whitelisted Deployment (No IAM Auth Required)
+To deploy with authentication removed at the Cloud Run level and IP whitelisting enabled:
+1. Export the security configuration variables before running the script:
+   ```bash
+   export ALLOW_UNAUTHENTICATED="true"
+   export ALLOWED_IPS="116.88.140.69;180.129.76.184" # Semicolon-separated whitelisted client IPs
+   ./gti-remotemcp-deploy.sh
+   ```
+
 2. The script will:
    - Build the container image using the `Dockerfile` and Google Cloud Build.
    - Store the image in Google Artifact Registry.
    - Deploy a Cloud Run service named `gti-mcp-service` in the `us-central1` region.
-   - Restrict access to authenticated calls (`--no-allow-unauthenticated`).
-   - Securely pass your `VT_APIKEY` as a service environment variable.
+   - Configure authentication access (`--allow-unauthenticated` or `--no-allow-unauthenticated`) and environment variables.
+   - Securely bind your `VT_APIKEY` from Google Secret Manager.
 
 On completion, the script will output the **Service URL**, **SSE Endpoint**, and verification details.
 

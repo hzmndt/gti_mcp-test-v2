@@ -19,6 +19,9 @@ from dataclasses import dataclass
 import logging
 import os
 import vt
+import ipaddress
+import urllib.request
+import json
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -75,7 +78,54 @@ from gti_mcp.tools import *
 
 # --- SSE and Auth Implementation ---
 
+class IPWhitelistMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app, allowed_ips: list[str], whitelist_google: bool = True):
+        super().__init__(app)
+        self.allowed_networks = []
+        for ip in allowed_ips:
+            try:
+                self.allowed_networks.append(ipaddress.ip_network(ip.strip()))
+            except ValueError:
+                pass
+        
+        self.google_networks = []
+        if whitelist_google:
+            try:
+                # Fetch Google public IP ranges
+                for url in ['https://www.gstatic.com/ipranges/goog.json', 'https://www.gstatic.com/ipranges/cloud.json']:
+                    with urllib.request.urlopen(url, timeout=5) as response:
+                        data = json.loads(response.read().decode())
+                        for prefix in data.get('prefixes', []):
+                            if 'ipv4Prefix' in prefix:
+                                self.google_networks.append(ipaddress.ip_network(prefix['ipv4Prefix']))
+                            elif 'ipv6Prefix' in prefix:
+                                self.google_networks.append(ipaddress.ip_network(prefix['ipv6Prefix']))
+            except Exception as e:
+                print(f"Warning: Failed to fetch Google IP ranges: {e}")
 
+    async def dispatch(self, request: Request, call_next):
+        x_forwarded_for = request.headers.get("x-forwarded-for")
+        if x_forwarded_for:
+            client_ip_str = x_forwarded_for.split(",")[0].strip()
+        else:
+            client_ip_str = request.client.host
+            
+        try:
+            client_ip = ipaddress.ip_address(client_ip_str)
+        except ValueError:
+            return JSONResponse({"error": "Forbidden - Invalid client IP"}, status_code=403)
+
+        # Check explicit whitelist
+        for network in self.allowed_networks:
+            if client_ip in network:
+                return await call_next(request)
+
+        # Check Google public ranges
+        for network in self.google_networks:
+            if client_ip in network:
+                return await call_next(request)
+
+        return JSONResponse({"error": f"Forbidden - Client IP {client_ip_str} not authorized"}, status_code=403)
 
 sse = SseServerTransport("/mcp")
 
@@ -114,7 +164,18 @@ routes = [
 ]
 
 app = Starlette(debug=True, routes=routes)
+
+# Configure allowed IPs
+allowed_ips_env = os.getenv("ALLOWED_IPS", "")
+if ";" in allowed_ips_env:
+    allowed_ips = [ip for ip in allowed_ips_env.split(";") if ip.strip()]
+else:
+    allowed_ips = [ip for ip in allowed_ips_env.split(",") if ip.strip()]
+# Always allow localhost
+allowed_ips.extend(["127.0.0.1", "::1"])
+
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+app.add_middleware(IPWhitelistMiddleware, allowed_ips=allowed_ips, whitelist_google=True)
 
 # Run the server (Local stdio support kept for back-compat/debugging)
 def main():
